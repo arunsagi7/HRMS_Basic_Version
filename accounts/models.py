@@ -1,0 +1,72 @@
+# accounts/models.py
+#
+# Two fully independent tables, as requested — no shared base table,
+# no OneToOne split. Each has its own name/email/password.
+#
+# Passwords are hashed with Django's own hasher (the same PBKDF2 algorithm
+# Django's built-in User uses) via make_password()/check_password() —
+# we're just not routing through Django's AbstractUser/AUTH_USER_MODEL
+# machinery to store them.
+
+from django.db import models
+from django.contrib.auth.hashers import make_password, check_password
+import secrets
+
+
+class Admin(models.Model):
+    name = models.CharField(max_length=150)
+    email = models.EmailField(unique=True)
+    password = models.CharField(max_length=255)   # stores the HASHED password, never plain text
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        return check_password(raw_password, self.password)
+
+    def __str__(self):
+        return f"{self.name} ({self.email})"
+
+
+class Employee(models.Model):
+    name = models.CharField(max_length=150)
+    email = models.EmailField(unique=True)
+    password = models.CharField(max_length=255)   # stores the HASHED password, never plain text
+    department = models.CharField(max_length=100, blank=True)
+    role = models.CharField(max_length=100, blank=True)   # e.g. "Team Lead", "Developer"
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def set_password(self, raw_password):
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        return check_password(raw_password, self.password)
+
+    def __str__(self):
+        return f"{self.name} ({self.email})"
+
+
+class AuthToken(models.Model):
+    """
+    Our own lightweight token table, since DRF's built-in Token model
+    expects a single AUTH_USER_MODEL — we have two separate tables instead.
+    Exactly one of admin/employee is set per row.
+    """
+    key = models.CharField(max_length=64, unique=True, editable=False)
+    admin = models.ForeignKey(Admin, null=True, blank=True, on_delete=models.CASCADE)
+    employee = models.ForeignKey(Employee, null=True, blank=True, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            self.key = secrets.token_hex(32)
+        super().save(*args, **kwargs)
+
+    @property
+    def role(self):
+        return "admin" if self.admin_id else "employee"
+
+    @property
+    def owner(self):
+        return self.admin if self.admin_id else self.employee
