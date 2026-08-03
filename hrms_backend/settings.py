@@ -25,7 +25,9 @@ SECRET_KEY = 'django-insecure-yj&t)^l0$eu#e&ktv^x8=$e(c1=_w)wo=bag^z@6@wh$d#(rmp
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ["*"]
+
+CORS_ALLOW_ALL_ORIGINS  = True
 
 
 # Application definition
@@ -71,9 +73,9 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",   # your Vite dev server — adjust the port if different
-]
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:5173",   # your Vite dev server — adjust the port if different
+# ]
 
 ROOT_URLCONF = 'hrms_backend.urls'
 
