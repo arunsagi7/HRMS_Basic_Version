@@ -10,24 +10,32 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
-
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-yj&t)^l0$eu#e&ktv^x8=$e(c1=_w)wo=bag^z@6@wh$d#(rmp'
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-yj&t)^l0$eu#e&ktv^x8=$e(c1=_w)wo=bag^z@6@wh$d#(rmp'
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ["*"]
 
-CORS_ALLOW_ALL_ORIGINS  = True
+# Railway automatically injects RAILWAY_PUBLIC_DOMAIN once you generate a domain
+RAILWAY_PUBLIC_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
+
+CSRF_TRUSTED_ORIGINS = []
+if RAILWAY_PUBLIC_DOMAIN:
+    CSRF_TRUSTED_ORIGINS.append(f"https://{RAILWAY_PUBLIC_DOMAIN}")
+
+CORS_ALLOW_ALL_ORIGINS = True
 
 
 # Application definition
@@ -39,20 +47,20 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    
+
     'corsheaders',
     'rest_framework',
     # 'rest_framework.authtoken',  # required for Token auth
-    
+
     'accounts',
     'tasks',
-    
+
 ]
 
 # Tell Django to use our custom User model instead of the default one.
 # IMPORTANT: this must be set before your first migration on a fresh DB.
 # AUTH_USER_MODEL = "accounts.User"
- 
+
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "accounts.authentication.AdminEmployeeTokenAuthentication",
@@ -65,7 +73,7 @@ REST_FRAMEWORK = {
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",   # add near the top, before CommonMiddleware
     'django.middleware.security.SecurityMiddleware',
-    'whitenoise.middleware.WhiteNoiseMiddleware',  
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -101,10 +109,14 @@ WSGI_APPLICATION = 'hrms_backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
+# SQLITE_DB_PATH lets us point at a persistent Railway volume in production
+# (e.g. /data/db.sqlite3) while still defaulting to a local file for dev.
+SQLITE_DB_PATH = os.environ.get('SQLITE_DB_PATH', str(BASE_DIR / 'db.sqlite3'))
+
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'NAME': SQLITE_DB_PATH,
     }
 }
 
