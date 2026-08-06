@@ -127,11 +127,6 @@ def get_priority_choices(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_active_session(request):
-    """
-    GET /api/tasks/my_active_session/
-    Lets the employee dashboard check "Is another task timer active?" on
-    page load, before the employee even clicks Start on anything.
-    """
     employee = _current_employee(request)
     if employee is None:
         return Response({"detail": "Only employees have timer sessions."}, status=status.HTTP_403_FORBIDDEN)
@@ -142,15 +137,15 @@ def get_active_session(request):
         .first()
     )
     if not session:
-        return Response(None)
+        return Response({"active": False, "task": None, "task_name": None, "session": None})
 
     return Response({
+        "active": True,
         "task": session.task_id,
         "task_name": session.task.task_name,
         "session": TimerSessionSerializer(session).data,
     })
-
-
+    
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def start_task(request, pk):
@@ -792,3 +787,27 @@ def get_my_reports(request):
         "by_quality": by_quality,
         "tasks": TaskListSerializer(tasks.order_by("-assigned_date"), many=True).data,
     })
+    
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_task(request, pk):
+    """
+    DELETE /api/tasks/<id>/delete/
+    Admin-only. Permanently removes the task. Only allowed for tasks that
+    are already Cancelled or Archived — deleting an active/in-progress
+    task would silently destroy timer history, so that's blocked.
+    """
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+
+    task = get_object_or_404(Task, pk=pk)
+    if task.task_status not in (Task.Status.CANCELLED, Task.Status.ARCHIVED):
+        return Response(
+            {"detail": "Only cancelled or archived tasks can be deleted."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    task_id_str = task.task_id
+    task.delete()  # CASCADE removes sessions, correction_requests; ActivityLog rows are SET_NULL/CASCADE per their FK config
+    return Response({"detail": f"{task_id_str} deleted."}, status=status.HTTP_200_OK)

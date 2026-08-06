@@ -48,4 +48,7 @@ urlpatterns = [
     path("my_activity/", views.get_my_activity, name="activity-employee"),
     path("reports/admin/", views.get_admin_reports, name="reports-admin"),
     path("reports/employee/", views.get_my_reports, name="reports-employee"),
+    
+    # Delete task
+    path("<int:pk>/delete/", views.delete_task, name="task-delete"),
 ]
