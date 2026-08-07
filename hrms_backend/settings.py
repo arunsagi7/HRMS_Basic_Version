@@ -109,14 +109,10 @@ WSGI_APPLICATION = 'hrms_backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-# SQLITE_DB_PATH lets us point at a persistent Railway volume in production
-# (e.g. /data/db.sqlite3) while still defaulting to a local file for dev.
-SQLITE_DB_PATH = os.environ.get('SQLITE_DB_PATH', str(BASE_DIR / 'db.sqlite3'))
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': SQLITE_DB_PATH,
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
