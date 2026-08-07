@@ -31,7 +31,10 @@ ALLOWED_HOSTS = ["*"]
 # Railway automatically injects RAILWAY_PUBLIC_DOMAIN once you generate a domain
 RAILWAY_PUBLIC_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
 
-CSRF_TRUSTED_ORIGINS = []
+CSRF_TRUSTED_ORIGINS = [
+    "https://hrmsbasicversion-production-da4f.up.railway.app",
+]
+
 if RAILWAY_PUBLIC_DOMAIN:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RAILWAY_PUBLIC_DOMAIN}")
 
