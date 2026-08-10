@@ -13,6 +13,7 @@ class TaskListSerializer(serializers.ModelSerializer):
     (assigned_to = None) don't blow up with an AttributeError.
     """
     assigned_to_name = serializers.SerializerMethodField()
+    created_by_role = serializers.SerializerMethodField()   # "admin" | "tl" — lets the UI badge TL-created tasks
     department_name = serializers.SerializerMethodField()
     assigned_by_name = serializers.SerializerMethodField()
     has_active_session = serializers.SerializerMethodField()
@@ -22,12 +23,12 @@ class TaskListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "task_id", "task_name", "task_details",
             "assigned_to", "assigned_to_name", "department_name",
-            "assigned_by", "assigned_by_name",
+            "assigned_by_name",
             "priority", "assigned_date", "due_date", "allotted_time",
             "task_status", "total_time_taken", "remaining_or_over_time",
             "task_sheet_link", "employee_remarks", "submitted_date",
             "quality_of_task", "rating", "admin_remarks", "reviewed_date",
-            "rework_count", "has_active_session",
+            "rework_count", "has_active_session", "created_by_role",
         ]
 
     def get_assigned_to_name(self, obj):
@@ -37,7 +38,10 @@ class TaskListSerializer(serializers.ModelSerializer):
         return obj.assigned_to.department if obj.assigned_to_id else None
 
     def get_assigned_by_name(self, obj):
-        return obj.assigned_by.name if obj.assigned_by_id else None
+        return obj.assigned_by_name
+    
+    def get_created_by_role(self, obj):
+        return obj.created_by_role
 
     def get_has_active_session(self, obj):
         # Lets the frontend show "Timer running" without a second request.
@@ -91,7 +95,7 @@ class TaskSubmitSerializer(serializers.Serializer):
     employee_remarks = serializers.CharField(required=False, allow_blank=True, default="")
     
     
-# ── Add to tasks/serializers.py ──────────────────────────────────────────────
+# ── Add to tasks/serializers.py ───────────────────────────  ───────────────────
 
 class ReviewApproveSerializer(serializers.Serializer):
     quality_of_task = serializers.ChoiceField(choices=Task.Quality.choices)

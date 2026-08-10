@@ -7,7 +7,7 @@ from .models import Task
 @admin.register(Task)
 class TaskAdmin(admin.ModelAdmin):
     list_display = (
-        "task_id", "task_name", "assigned_to", "assigned_by",
+        "task_id", "task_name", "assigned_to",
         "priority", "task_status", "total_time_taken", "due_date",
     )
     list_filter = ("task_status", "priority")

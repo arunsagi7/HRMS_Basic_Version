@@ -33,6 +33,21 @@ def _current_employee(request):
         return None
     return request.user.instance
 
+def _is_tl(request):
+    employee = _current_employee(request)
+    return employee is not None and employee.role == "TL"
+
+def _can_manage_tasks(request):
+    """Who's allowed to create tasks at all: Admin or a TL."""
+    return _is_admin(request) or _is_tl(request)
+
+def _owns_task_for_management(request, task):
+    """Who's allowed to assign/reassign/hold/cancel THIS specific task.
+    Admin: any task. TL: only tasks they personally created."""
+    if _is_admin(request):
+        return True
+    employee = _current_employee(request)
+    return employee is not None and employee.role == "TL" and task.assigned_by_employee_id == employee.id
 
 # ── Task CRUD (unchanged from before) ────────────────────────────────────────
 
@@ -57,37 +72,52 @@ def get_all_tasks(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_task(request):
-    """
-    POST /api/tasks/create_task/
-    body: { "task_name": "...", "task_details": "..." }
-    Admin-only. Creates the task unassigned (assigned_to = null,
-    task_status = Not Started).
-    """
-    if not _is_admin(request):
-        return Response({"detail": "Only admins can create tasks."}, status=status.HTTP_403_FORBIDDEN)
+    if not _can_manage_tasks(request):
+        return Response({"detail": "Only admins or team leads can create tasks."}, status=status.HTTP_403_FORBIDDEN)
 
     serializer = TaskCreateSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
-    task = serializer.save(assigned_by=request.user.instance)
+
+    if _is_admin(request):
+        task = serializer.save(assigned_by_admin=request.user.instance)
+    else:
+        task = serializer.save(assigned_by_employee=request.user.instance)
+
     return Response(TaskListSerializer(task).data, status=status.HTTP_201_CREATED)
 
 
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def assign_task(request, pk):
-    """
-    PATCH /api/tasks/assign_task/<id>/
-    Admin-only. Same endpoint handles first assignment and reassignment.
-    """
-    if not _is_admin(request):
-        return Response({"detail": "Only admins can assign tasks."}, status=status.HTTP_403_FORBIDDEN)
-
     task = get_object_or_404(Task, pk=pk)
+    if not _owns_task_for_management(request, task):
+        return Response(
+            {"detail": "You can only assign or reassign tasks you created."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
     serializer = TaskAssignSerializer(task, data=request.data, partial=True)
     serializer.is_valid(raise_exception=True)
     task = serializer.save(task_status=Task.Status.NOT_STARTED)
-    
     return Response(TaskListSerializer(task).data)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_tl_tasks(request):
+    """
+    GET /api/tasks/tl_tasks/
+    TL-only. Every task this TL personally created — self-assigned or
+    handed to someone else. Mirrors get_all_tasks but scoped instead of
+    system-wide; admins keep using get_all_tasks for the full picture.
+    """
+    if not _is_tl(request):
+        return Response({"detail": "Team leads only."}, status=status.HTTP_403_FORBIDDEN)
+
+    employee = _current_employee(request)
+    tasks = Task.objects.filter(assigned_by_employee=employee)
+    if request.query_params.get("include_archived") != "true":
+        tasks = tasks.exclude(task_status=Task.Status.ARCHIVED)
+
+    return Response(TaskListSerializer(tasks, many=True).data)
 
 
 @api_view(["GET"])
@@ -536,9 +566,9 @@ NON_FINAL_STATUSES = [s for s in Task.Status.values if s not in
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def hold_task(request, pk):
-    if not _is_admin(request):
-        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
     task = get_object_or_404(Task, pk=pk)
+    if not _owns_task_for_management(request, task):
+        return Response({"detail": "You can only hold tasks you created."}, status=status.HTTP_403_FORBIDDEN)
     if task.task_status not in NON_FINAL_STATUSES:
         return Response({"detail": "This task can't be put on hold from its current status."}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -573,8 +603,9 @@ def release_hold(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def cancel_task(request, pk):
-    if not _is_admin(request):
-        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    task = get_object_or_404(Task, pk=pk)
+    if not _owns_task_for_management(request, task):
+        return Response({"detail": "You can only hold tasks you created."}, status=status.HTTP_403_FORBIDDEN)
     task = get_object_or_404(Task, pk=pk)
     if task.task_status not in NON_FINAL_STATUSES + [Task.Status.ON_HOLD]:
         return Response({"detail": "This task can't be cancelled from its current status."}, status=status.HTTP_400_BAD_REQUEST)
@@ -592,8 +623,9 @@ def cancel_task(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def archive_task(request, pk):
-    if not _is_admin(request):
-        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    task = get_object_or_404(Task, pk=pk)
+    if not _owns_task_for_management(request, task):
+        return Response({"detail": "You can only hold tasks you created."}, status=status.HTTP_403_FORBIDDEN)
     task = get_object_or_404(Task, pk=pk)
     if task.task_status not in (Task.Status.COMPLETED, Task.Status.CANCELLED):
         return Response({"detail": "Only completed or cancelled tasks can be archived."}, status=status.HTTP_400_BAD_REQUEST)
@@ -792,14 +824,9 @@ def get_my_reports(request):
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_task(request, pk):
-    """
-    DELETE /api/tasks/<id>/delete/
-    Admin-only. Permanently removes the task. Only allowed for tasks that
-    are already Cancelled or Archived — deleting an active/in-progress
-    task would silently destroy timer history, so that's blocked.
-    """
-    if not _is_admin(request):
-        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    task = get_object_or_404(Task, pk=pk)
+    if not _owns_task_for_management(request, task):
+        return Response({"detail": "You can only hold tasks you created."}, status=status.HTTP_403_FORBIDDEN)
 
     task = get_object_or_404(Task, pk=pk)
     if task.task_status not in (Task.Status.CANCELLED, Task.Status.ARCHIVED):
@@ -811,3 +838,4 @@ def delete_task(request, pk):
     task_id_str = task.task_id
     task.delete()  # CASCADE removes sessions, correction_requests; ActivityLog rows are SET_NULL/CASCADE per their FK config
     return Response({"detail": f"{task_id_str} deleted."}, status=status.HTTP_200_OK)
+

@@ -42,9 +42,15 @@ class Task(models.Model):
         Employee, on_delete=models.PROTECT, related_name="assigned_tasks",
         null=True, blank=True,
     )
-    assigned_by = models.ForeignKey(
-        Admin, on_delete=models.PROTECT, related_name="tasks_assigned"
+    
+    assigned_by_admin = models.ForeignKey(
+        Admin, null=True, blank=True, on_delete=models.PROTECT, related_name="tasks_created"
     )
+    assigned_by_employee = models.ForeignKey(
+        Employee, null=True, blank=True, on_delete=models.PROTECT, related_name="tasks_created_as_tl",
+        help_text="Set when a TL creates the task instead of an Admin.",
+    )
+    
     priority = models.CharField(max_length=10, choices=Priority.choices, default=Priority.MEDIUM)
     assigned_date = models.DateField(auto_now_add=True)
     due_date = models.DateField(null=True, blank=True)
@@ -119,7 +125,27 @@ class Task(models.Model):
         if self.allotted_time is not None:
             self.remaining_or_over_time = self.allotted_time - hours
         self.save(update_fields=["total_time_taken", "remaining_or_over_time"])
+    
+    @property
+    def assigned_by_name(self):
+        if self.assigned_by_admin_id:
+            return self.assigned_by_admin.name
+        if self.assigned_by_employee_id:
+            return self.assigned_by_employee.name
+        return None
 
+    @property
+    def created_by_role(self):
+        if self.assigned_by_admin_id:
+            return "admin"
+        if self.assigned_by_employee_id:
+            return "tl"
+        return None
+    
+    def forwards(apps, schema_editor):
+        Task = apps.get_model("tasks", "Task")
+        Task.objects.filter(assigned_by__isnull=False).update(assigned_by_admin=models.F("assigned_by"))
+        
 class TimerSession(models.Model):
     """
     One row per Start->Pause (or Start->Submit) interval. Never overwritten —

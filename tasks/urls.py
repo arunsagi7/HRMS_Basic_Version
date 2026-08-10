@@ -51,4 +51,6 @@ urlpatterns = [
     
     # Delete task
     path("<int:pk>/delete/", views.delete_task, name="task-delete"),
+    
+    path("tl_tasks/", views.get_tl_tasks, name="tl-tasks"),
 ]

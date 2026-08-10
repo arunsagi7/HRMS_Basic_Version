@@ -45,10 +45,13 @@ def logout_view(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def me_view(request):
-    principal = request.user  # SimplePrincipal wrapping Admin or Employee
+    principal = request.user
     if principal.role == "admin":
         data = AdminSerializer(principal.instance).data
+        data["auth_role"] = "admin"
+        data["is_tl"] = False
     else:
-        data = EmployeeSerializer(principal.instance).data
-    data["role"] = principal.role
+        data = EmployeeSerializer(principal.instance).data  # keeps job-title `role`, e.g. "TL"
+        data["auth_role"] = "employee"
+        data["is_tl"] = principal.instance.role == "TL"
     return Response(data)
