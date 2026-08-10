@@ -195,3 +195,19 @@ class CorrectionRequest(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        
+class TaskMaster(models.Model):
+    """
+    Reusable task catalog. Admin picks from this in the Create Task form;
+    picking one prefills allotted_time and (via the frontend) the due date.
+    """
+    task_name = models.CharField(max_length=255)
+    default_hours = models.DecimalField(max_digits=6, decimal_places=2)
+    is_active = models.BooleanField(default=True)  # lets you retire old entries without deleting history
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["task_name"]
+
+    def __str__(self):
+        return f"{self.task_name} — {self.default_hours}hr"

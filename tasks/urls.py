@@ -53,4 +53,14 @@ urlpatterns = [
     path("<int:pk>/delete/", views.delete_task, name="task-delete"),
     
     path("tl_tasks/", views.get_tl_tasks, name="tl-tasks"),
+    path("create_and_assign/", views.create_and_assign_task, name="task-create-assign"),
+    path("task_master/", views.get_task_master_list, name="task-master-list"),
+    
+    path("task_master/", views.get_task_master_list, name="task-master-list"),          # dropdown source, active-only
+    path("task_master/get_all/", views.get_all_task_master, name="task-master-all"),    # management screen
+    path("task_master/create/", views.create_task_master, name="task-master-create"),
+    path("task_master/<int:pk>/edit/", views.edit_task_master, name="task-master-edit"),
+    path("task_master/<int:pk>/delete/", views.delete_task_master, name="task-master-delete"),
+    
+    path("task_master/bulk_create/", views.bulk_create_task_master, name="task-master-bulk-create"),
 ]

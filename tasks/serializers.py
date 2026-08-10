@@ -1,7 +1,7 @@
 # tasks/serializers.py
 
 from rest_framework import serializers
-from .models import Task, TimerSession
+from .models import Task, TimerSession, TaskMaster
 
 
 class TaskListSerializer(serializers.ModelSerializer):
@@ -127,3 +127,72 @@ class CorrectionListSerializer(serializers.ModelSerializer):
 
     def get_decided_by_name(self, obj):
         return obj.decided_by.name if obj.decided_by_id else None
+    
+class TaskCreateAssignSerializer(serializers.ModelSerializer):
+    """
+    Combined create+assign in one shot. Same required fields as
+    TaskAssignSerializer, plus task_name/task_details from TaskCreateSerializer.
+    Used by POST /api/tasks/create_and_assign/.
+    """
+    class Meta:
+        model = Task
+        fields = [
+            "task_name", "task_details",
+            "assigned_to", "priority", "due_date", "allotted_time",
+        ]
+        extra_kwargs = {
+            "assigned_to": {"required": True},
+            "priority": {"required": True},
+            "due_date": {"required": True},
+            "allotted_time": {"required": True},
+        }
+
+    def validate_task_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Task name cannot be blank.")
+        return value
+
+
+class TaskMasterSerializer(serializers.ModelSerializer):
+    label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TaskMaster
+        fields = ["id", "task_name", "default_hours","is_active", "label"]
+
+    def get_label(self, obj):
+        # "Logo Creation - 1hr" — exactly the dropdown text you asked for
+        hours = obj.default_hours
+        hours_str = f"{hours:g}"  # trims trailing .00 -> "1" instead of "1.00"
+        return f"{obj.task_name} - {hours_str}hr"
+    
+class TaskMasterWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = TaskMaster
+        fields = ["id", "task_name", "default_hours", "is_active"]
+        extra_kwargs = {
+            "is_active": {"required": False},
+        }
+
+    def validate_task_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Task name cannot be blank.")
+        return value
+
+    def validate_default_hours(self, value):
+        if value <= 0:
+            raise serializers.ValidationError("Hours must be greater than 0.")
+        return value
+
+    def validate(self, attrs):
+        name = attrs.get("task_name", getattr(self.instance, "task_name", None))
+        hours = attrs.get("default_hours", getattr(self.instance, "default_hours", None))
+        qs = TaskMaster.objects.filter(task_name__iexact=name, default_hours=hours)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError(
+                {"default_hours": f'"{name}" with {hours}hr already exists in the catalog.'}
+            )
+        return attrs

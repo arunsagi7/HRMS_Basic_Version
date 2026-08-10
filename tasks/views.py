@@ -8,10 +8,10 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 from accounts.models import Employee
-from .models import Task, TimerSession
+from .models import Task, TimerSession, TaskMaster
 from .serializers import (
     TaskListSerializer, TaskCreateSerializer, TaskAssignSerializer,
-    TimerSessionSerializer, TaskSubmitSerializer, ReviewApproveSerializer, ReviewReworkSerializer
+    TimerSessionSerializer, TaskSubmitSerializer, ReviewApproveSerializer, ReviewReworkSerializer, TaskCreateAssignSerializer, TaskMasterSerializer, TaskMasterWriteSerializer
 )
 from .activity import ActivityLog, log_activity
 
@@ -20,6 +20,7 @@ from .activity import ActivityLog, log_activity
 from django.db import models as db_models  # aliased so it doesn't clash with the `models` you already reference via Task etc.
 from .serializers import CorrectionListSerializer
 from .models import CorrectionRequest  # already imported lower down in your file — just make sure it's available at module level
+from decimal import Decimal
 
 def _is_admin(request):
     # request.user is a SimplePrincipal wrapping either Admin or Employee
@@ -839,3 +840,164 @@ def delete_task(request, pk):
     task.delete()  # CASCADE removes sessions, correction_requests; ActivityLog rows are SET_NULL/CASCADE per their FK config
     return Response({"detail": f"{task_id_str} deleted."}, status=status.HTTP_200_OK)
 
+from .serializers import (
+    TaskListSerializer, TaskCreateSerializer, TaskAssignSerializer,
+    TimerSessionSerializer, TaskSubmitSerializer, ReviewApproveSerializer,
+    ReviewReworkSerializer, TaskCreateAssignSerializer,   # add this
+)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_and_assign_task(request):
+    """
+    POST /api/tasks/create_and_assign/
+    Atomic create+assign — either both succeed or neither does. No orphaned
+    unassigned task left behind if validation fails partway through.
+    """
+    if not _can_manage_tasks(request):
+        return Response({"detail": "Only admins or team leads can create tasks."}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = TaskCreateAssignSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    with transaction.atomic():
+        if _is_admin(request):
+            task = serializer.save(
+                assigned_by_admin=request.user.instance,
+                task_status=Task.Status.NOT_STARTED,
+            )
+        else:
+            task = serializer.save(
+                assigned_by_employee=request.user.instance,
+                task_status=Task.Status.NOT_STARTED,
+            )
+
+        log_activity(
+            task, request.user, ActivityLog.Action.CREATED,
+            to_status="not_started",
+            details={
+                "assigned_to": task.assigned_to.name if task.assigned_to_id else None,
+                "priority": task.priority,
+                "due_date": str(task.due_date) if task.due_date else None,
+                "allotted_time": str(task.allotted_time) if task.allotted_time is not None else None,
+            },
+        )
+
+    return Response(TaskListSerializer(task).data, status=status.HTTP_201_CREATED)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_task_master_list(request):
+    """GET /api/tasks/task_master/ — dropdown source for Create Task's Task Name field."""
+    templates = TaskMaster.objects.filter(is_active=True).order_by("task_name")
+    return Response(TaskMasterSerializer(templates, many=True).data)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_all_task_master(request):
+    """
+    GET /api/tasks/task_master/get_all/
+    Admin-only management list — unlike get_task_master_list (the dropdown
+    source, active-only), this one shows everything including inactive rows
+    so admins can see/edit/reactivate them.
+    """
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    templates = TaskMaster.objects.all().order_by("task_name")
+    return Response(TaskMasterSerializer(templates, many=True).data)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_task_master(request):
+    """POST /api/tasks/task_master/create/"""
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+
+    serializer = TaskMasterWriteSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    template = serializer.save()
+    return Response(TaskMasterSerializer(template).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def edit_task_master(request, pk):
+    """PATCH /api/tasks/task_master/<id>/edit/"""
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+
+    template = get_object_or_404(TaskMaster, pk=pk)
+    serializer = TaskMasterWriteSerializer(template, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    template = serializer.save()
+    return Response(TaskMasterSerializer(template).data)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_task_master(request, pk):
+    """
+    DELETE /api/tasks/task_master/<id>/delete/
+    Hard delete. Safe to do even though old Task rows may have been created
+    from this template, since Task.task_name is a plain copied string with
+    no FK back to TaskMaster — deleting a template never touches past tasks.
+    """
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+
+    template = get_object_or_404(TaskMaster, pk=pk)
+    name = template.task_name
+    template.delete()
+    return Response({"detail": f'"{name}" deleted.'}, status=status.HTTP_200_OK)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def bulk_create_task_master(request):
+    """
+    POST /api/tasks/task_master/bulk_create/
+    body: { "items": [{"task_name": "...", "default_hours": 3}, ...] }
+    Processes every row independently — one bad row doesn't block the rest.
+    Duplicate task_name (case-insensitive) is skipped, not an error.
+    """
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+
+    items = request.data.get("items")
+    if not isinstance(items, list) or not items:
+        return Response({"detail": "items must be a non-empty list."}, status=status.HTTP_400_BAD_REQUEST)
+
+    created, skipped, errors = [], [], []
+
+    for idx, row in enumerate(items):
+        row_num = idx + 1
+        name = str(row.get("task_name", "")).strip()
+        raw_hours = row.get("default_hours")
+
+        if not name:
+            errors.append({"row": row_num, "error": "Missing task name"})
+            continue
+
+        try:
+            hours = Decimal(str(raw_hours))
+            if hours <= 0:
+                raise ValueError
+        except Exception:
+            errors.append({"row": row_num, "task_name": name, "error": f"Invalid hours: {raw_hours!r}"})
+            continue
+
+        if TaskMaster.objects.filter(task_name__iexact=name, default_hours=hours).exists():
+            skipped.append({"row": row_num, "task_name": name, "reason": f"Already exists at {hours}hr"})
+            continue
+
+        tm = TaskMaster.objects.create(task_name=name, default_hours=hours)
+        created.append(TaskMasterSerializer(tm).data)
+
+    return Response({
+        "created_count": len(created),
+        "skipped_count": len(skipped),
+        "error_count": len(errors),
+        "created": created,
+        "skipped": skipped,
+        "errors": errors,
+    })
