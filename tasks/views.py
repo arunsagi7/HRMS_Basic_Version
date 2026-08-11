@@ -50,7 +50,63 @@ def _owns_task_for_management(request, task):
     employee = _current_employee(request)
     return employee is not None and employee.role == "TL" and task.assigned_by_employee_id == employee.id
 
-# ── Task CRUD (unchanged from before) ────────────────────────────────────────
+def _can_review_task(request, task):
+    """
+    Who's allowed to review THIS task: Admin always. A TL only if they
+    created it AND it isn't assigned to themselves — self-assigned TL
+    tasks must go to admin for review, so a TL can't approve their own work.
+    """
+    if _is_admin(request):
+        return True
+    employee = _current_employee(request)
+    if employee is None or employee.role != "TL":
+        return False
+    if task.assigned_by_employee_id != employee.id:
+        return False
+    if task.assigned_to_id == employee.id:
+        return False  # self-assigned — admin reviews this one instead
+    return True
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_tl_review_tasks(request):
+    """
+    GET /api/tasks/tl_review_tasks/
+    TL-only. Tasks THIS TL created and assigned to someone else — mirrors
+    get_tl_tasks vs get_all_tasks. Self-assigned tasks are excluded; those
+    go to the admin review queue instead, since a TL can't review their
+    own submitted work.
+    """
+    if not _is_tl(request):
+        return Response({"detail": "Team leads only."}, status=status.HTTP_403_FORBIDDEN)
+
+    employee = _current_employee(request)
+    tasks = Task.objects.filter(
+        assigned_by_employee=employee,
+        task_status__in=[Task.Status.SUBMITTED, Task.Status.RESUBMITTED, Task.Status.UNDER_REVIEW],
+    ).exclude(assigned_to=employee)
+    return Response(TaskListSerializer(tasks, many=True).data)
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def start_review(request, pk):
+    """
+    POST /api/tasks/<id>/review/start/
+    Admin or the TL who created this task. Submitted/Resubmitted -> Under Review.
+    """
+    task = get_object_or_404(Task, pk=pk)
+    if not _can_review_task(request, task):
+        return Response({"detail": "You can't review this task."}, status=status.HTTP_403_FORBIDDEN)
+
+    if task.task_status not in (Task.Status.SUBMITTED, Task.Status.RESUBMITTED):
+        return Response(
+            {"detail": "Only submitted or resubmitted tasks can enter review."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    task.task_status = Task.Status.UNDER_REVIEW
+    task.save(update_fields=["task_status"])
+    return Response(TaskListSerializer(task).data)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -120,6 +176,25 @@ def get_tl_tasks(request):
 
     return Response(TaskListSerializer(tasks, many=True).data)
 
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_my_tasks(request):
+    """
+    GET /api/tasks/my_tasks/
+    Employee-only. Every task assigned to the logged-in employee —
+    used by the "My Tasks Only" scope on Active_Task_Employee, and by
+    forceScope="mine" (the TL's "My Task" screen).
+    """
+    employee = _current_employee(request)
+    if employee is None:
+        return Response({"detail": "Employees only."}, status=status.HTTP_403_FORBIDDEN)
+
+    tasks = Task.objects.filter(assigned_to=employee)
+    if request.query_params.get("include_archived") != "true":
+        tasks = tasks.exclude(task_status=Task.Status.ARCHIVED)
+
+    return Response(TaskListSerializer(tasks, many=True).data)
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -372,36 +447,13 @@ def get_review_tasks(request):
     )
     return Response(TaskListSerializer(tasks, many=True).data)
 
-
-@api_view(["POST"])
-@permission_classes([IsAuthenticated])
-def start_review(request, pk):
-    """
-    POST /api/tasks/<id>/review/start/
-    Admin-only. Submitted/Resubmitted -> Under Review.
-    """
-    if not _is_admin(request):
-        return Response({"detail": "Only admins can review tasks."}, status=status.HTTP_403_FORBIDDEN)
-
-    task = get_object_or_404(Task, pk=pk)
-    if task.task_status not in (Task.Status.SUBMITTED, Task.Status.RESUBMITTED):
-        return Response(
-            {"detail": "Only submitted or resubmitted tasks can enter review."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    task.task_status = Task.Status.UNDER_REVIEW
-    task.save(update_fields=["task_status"])
-    return Response(TaskListSerializer(task).data)
-
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def approve_task(request, pk):
-    if not _is_admin(request):
-        return Response({"detail": "Only admins can approve tasks."}, status=status.HTTP_403_FORBIDDEN)
-
     task = get_object_or_404(Task, pk=pk)
+    if not _can_review_task(request, task):
+        return Response({"detail": "You can't review this task."}, status=status.HTTP_403_FORBIDDEN)
+
     if task.task_status != Task.Status.UNDER_REVIEW:
         return Response(
             {"detail": "This task must be Under Review before it can be approved."},
@@ -432,10 +484,10 @@ def approve_task(request, pk):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def request_rework(request, pk):
-    if not _is_admin(request):
-        return Response({"detail": "Only admins can request rework."}, status=status.HTTP_403_FORBIDDEN)
-
     task = get_object_or_404(Task, pk=pk)
+    if not _can_review_task(request, task):
+        return Response({"detail": "You can't review this task."}, status=status.HTTP_403_FORBIDDEN)
+
     if task.task_status != Task.Status.UNDER_REVIEW:
         return Response(
             {"detail": "This task must be Under Review before requesting rework."},

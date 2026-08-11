@@ -5,9 +5,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from .serializers import LoginSerializer, AdminSerializer, EmployeeSerializer
-from .models import AuthToken
-
+from .serializers import LoginSerializer, AdminSerializer, EmployeeSerializer, EmployeeCredentialSerializer, EmployeeWriteSerializer
+from .models import AuthToken, Employee   
+from django.shortcuts import get_object_or_404
+from django.db.models.deletion import ProtectedError
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -55,3 +56,78 @@ def me_view(request):
         data["auth_role"] = "employee"
         data["is_tl"] = principal.instance.role == "TL"
     return Response(data)
+
+
+def _is_admin(request):
+    return getattr(request.user, "role", None) == "admin"
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_all_employee_credentials(request):
+    """GET /api/auth/employees/ — Team Access list. Admin-only."""
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    employees = Employee.objects.all().order_by("name")
+    return Response(EmployeeCredentialSerializer(employees, many=True).data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_employee_departments(request):
+    """
+    GET /api/auth/employees/departments/
+    Distinct department strings already in use — dropdown source, plus the
+    admin can still type a brand-new department name (Select is searchable/tag-friendly).
+    """
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    departments = (
+        Employee.objects.exclude(department="")
+        .values_list("department", flat=True)
+        .distinct()
+        .order_by("department")
+    )
+    return Response(list(departments))
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def create_employee_credential(request):
+    """POST /api/auth/employees/create/"""
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    serializer = EmployeeWriteSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    employee = serializer.save()
+    return Response(EmployeeCredentialSerializer(employee).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def edit_employee_credential(request, pk):
+    """PATCH /api/auth/employees/<id>/edit/"""
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    employee = get_object_or_404(Employee, pk=pk)
+    serializer = EmployeeWriteSerializer(employee, data=request.data, partial=True)
+    serializer.is_valid(raise_exception=True)
+    employee = serializer.save()
+    return Response(EmployeeCredentialSerializer(employee).data)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_employee_credential(request, pk):
+    """DELETE /api/auth/employees/<id>/delete/"""
+    if not _is_admin(request):
+        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    employee = get_object_or_404(Employee, pk=pk)
+    name = employee.name
+    try:
+        employee.delete()
+    except ProtectedError:
+        return Response(
+            {"detail": "This employee has tasks or timer history and can't be deleted. Consider deactivating instead."},
+            status=status.HTTP_409_CONFLICT,
+        )

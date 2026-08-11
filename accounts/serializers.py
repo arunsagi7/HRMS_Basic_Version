@@ -39,3 +39,61 @@ class EmployeeSerializer(serializers.ModelSerializer):
         model = Employee
         fields = ["id", "name", "email", "department", "role"]
         
+
+class EmployeeCredentialSerializer(serializers.ModelSerializer):
+    """Used by the Team Access list/table — never exposes the password hash."""
+    class Meta:
+        model = Employee
+        fields = ["id", "name", "email", "department", "role", "is_active", "created_at"]
+
+
+class EmployeeWriteSerializer(serializers.ModelSerializer):
+    """
+    Used for create AND edit. password is write-only and optional on edit —
+    leaving it blank keeps the existing password unchanged.
+    """
+    password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+
+    class Meta:
+        model = Employee
+        fields = ["id", "name", "email", "password", "department", "role", "is_active"]
+        extra_kwargs = {
+            "name": {"required": True},
+            "email": {"required": True},
+            "is_active": {"required": False},
+        }
+
+    def validate_name(self, value):
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Name cannot be blank.")
+        return value
+
+    def validate_email(self, value):
+        qs = Employee.objects.filter(email__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("An employee with this email already exists.")
+        return value
+
+    def validate(self, attrs):
+        if self.instance is None and not attrs.get("password"):
+            raise serializers.ValidationError({"password": "Password is required when creating a new employee."})
+        return attrs
+
+    def create(self, validated_data):
+        raw_password = validated_data.pop("password")
+        employee = Employee(**validated_data)
+        employee.set_password(raw_password)
+        employee.save()
+        return employee
+
+    def update(self, instance, validated_data):
+        raw_password = validated_data.pop("password", None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        if raw_password:
+            instance.set_password(raw_password)
+        instance.save()
+        return instance

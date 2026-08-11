@@ -63,4 +63,7 @@ urlpatterns = [
     path("task_master/<int:pk>/delete/", views.delete_task_master, name="task-master-delete"),
     
     path("task_master/bulk_create/", views.bulk_create_task_master, name="task-master-bulk-create"),
+    
+    path("my_tasks/", views.get_my_tasks, name="employee-my-tasks"),
+    path("tl_review_tasks/", views.get_tl_review_tasks, name="tl-review-tasks"),
 ]

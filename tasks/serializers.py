@@ -152,20 +152,24 @@ class TaskCreateAssignSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Task name cannot be blank.")
         return value
 
-
 class TaskMasterSerializer(serializers.ModelSerializer):
     label = serializers.SerializerMethodField()
 
     class Meta:
         model = TaskMaster
-        fields = ["id", "task_name", "default_hours","is_active", "label"]
+        fields = ["id", "task_name", "default_hours", "is_active", "label"]
 
     def get_label(self, obj):
-        # "Logo Creation - 1hr" — exactly the dropdown text you asked for
-        hours = obj.default_hours
-        hours_str = f"{hours:g}"  # trims trailing .00 -> "1" instead of "1.00"
-        return f"{obj.task_name} - {hours_str}hr"
-    
+        total_minutes = round(float(obj.default_hours) * 60)
+        hours, minutes = divmod(total_minutes, 60)
+        if hours and minutes:
+            duration = f"{hours}h {minutes}m"
+        elif hours:
+            duration = f"{hours}h"
+        else:
+            duration = f"{minutes}m"
+        return f"{obj.task_name} - {duration}"
+
 class TaskMasterWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model = TaskMaster

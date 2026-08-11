@@ -41,7 +41,7 @@ class AdminForm(HashedPasswordFormMixin):
 class EmployeeForm(HashedPasswordFormMixin):
     class Meta:
         model = Employee
-        fields = ["name", "email", "password", "department", "role"]
+        fields = ["name", "email", "password", "department", "role", "is_active"]
 
 
 @admin.register(Admin)

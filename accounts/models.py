@@ -35,6 +35,7 @@ class Employee(models.Model):
     password = models.CharField(max_length=255)   # stores the HASHED password, never plain text
     department = models.CharField(max_length=100, blank=True)
     role = models.CharField(max_length=100, blank=True)   # e.g. "Team Lead", "Developer"
+    is_active = models.BooleanField(default=True)   # NEW — lets admin disable a login without deleting history
     created_at = models.DateTimeField(auto_now_add=True)
 
     def set_password(self, raw_password):
