@@ -211,7 +211,7 @@ class RecurringTaskDefinitionSerializer(serializers.ModelSerializer):
         model = RecurringTaskDefinition
         fields = [
             "id", "task_name", "task_details", "assigned_to", "assigned_to_name",
-            "priority", "allotted_time", "frequency", "start_date", "end_date",
+            "priority", "allotted_time", "frequency", "start_date", "end_date", "exclude_sundays",
             "is_active", "created_at",
         ]
 
@@ -225,13 +225,14 @@ class RecurringTaskDefinitionCreateSerializer(serializers.ModelSerializer):
         model = RecurringTaskDefinition
         fields = [
             "task_name", "task_details", "assigned_to",
-            "priority", "allotted_time", "start_date", "end_date",
+            "priority", "allotted_time", "start_date", "end_date", "exclude_sundays",
         ]
         extra_kwargs = {
             "assigned_to": {"required": True},
             "priority": {"required": True},
             "allotted_time": {"required": True},
             "start_date": {"required": True},
+            "exclude_sundays": {"required": False},
         }
 
     def validate_task_name(self, value):

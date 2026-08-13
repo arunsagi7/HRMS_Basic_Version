@@ -253,6 +253,7 @@ class RecurringTaskDefinition(models.Model):
     allotted_time = models.DecimalField(max_digits=6, decimal_places=2)
 
     frequency = models.CharField(max_length=10, choices=Frequency.choices, default=Frequency.DAILY)
+    exclude_sundays = models.BooleanField(default=False)  # NEW — skip generating a Task on Sundays
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)  # blank = runs until manually stopped
 

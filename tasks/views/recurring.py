@@ -39,24 +39,24 @@ def generate_recurring_tasks(as_of_date=None):
         walk_until = min(as_of_date, d.end_date) if d.end_date else as_of_date
 
         while cursor <= walk_until:
-            Task.objects.get_or_create(
-                recurring_source=d,
-                generated_for_date=cursor,
-                defaults=dict(
-                    task_name=d.task_name,
-                    task_details=d.task_details,
-                    assigned_to=d.assigned_to,
-                    priority=d.priority,
-                    allotted_time=d.allotted_time,
-                    due_date=cursor,
-                    assigned_by_admin=d.assigned_by_admin,
-                    assigned_by_employee=d.assigned_by_employee,
-                    task_status=Task.Status.NOT_STARTED,
-                ),
-            )
+            if not (d.exclude_sundays and cursor.weekday() == 6):  # Python: Monday=0 … Sunday=6
+                Task.objects.get_or_create(
+                    recurring_source=d,
+                    generated_for_date=cursor,
+                    defaults=dict(
+                        task_name=d.task_name,
+                        task_details=d.task_details,
+                        assigned_to=d.assigned_to,
+                        priority=d.priority,
+                        allotted_time=d.allotted_time,
+                        due_date=cursor,
+                        assigned_by_admin=d.assigned_by_admin,
+                        assigned_by_employee=d.assigned_by_employee,
+                        task_status=Task.Status.NOT_STARTED,
+                    ),
+                )
             cursor += timedelta(days=1)
-
-
+            
 # ── Recurring task definition views ────────────────────────────────────────
 # Create/list/stop recurring task definitions.
 
