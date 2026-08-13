@@ -1,7 +1,7 @@
 # tasks/serializers.py
 
 from rest_framework import serializers
-from .models import Task, TimerSession, TaskMaster
+from .models import Task, TimerSession, TaskMaster, RecurringTaskDefinition
 
 
 class TaskListSerializer(serializers.ModelSerializer):
@@ -199,4 +199,49 @@ class TaskMasterWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 {"default_hours": f'"{name}" with {hours}hr already exists in the catalog.'}
             )
+        return attrs
+    
+# tasks/serializers.py — add these, and add RecurringTaskDefinition to the models import
+
+class RecurringTaskDefinitionSerializer(serializers.ModelSerializer):
+    """Read view — used by the admin's recurring-tasks management screen."""
+    assigned_to_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = RecurringTaskDefinition
+        fields = [
+            "id", "task_name", "task_details", "assigned_to", "assigned_to_name",
+            "priority", "allotted_time", "frequency", "start_date", "end_date",
+            "is_active", "created_at",
+        ]
+
+    def get_assigned_to_name(self, obj):
+        return obj.assigned_to.name if obj.assigned_to_id else None
+
+
+class RecurringTaskDefinitionCreateSerializer(serializers.ModelSerializer):
+    """Write view — used by the Create Task modal when 'Repeats Daily' is checked."""
+    class Meta:
+        model = RecurringTaskDefinition
+        fields = [
+            "task_name", "task_details", "assigned_to",
+            "priority", "allotted_time", "start_date", "end_date",
+        ]
+        extra_kwargs = {
+            "assigned_to": {"required": True},
+            "priority": {"required": True},
+            "allotted_time": {"required": True},
+            "start_date": {"required": True},
+        }
+
+    def validate_task_name(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("Task name cannot be blank.")
+        return value
+
+    def validate(self, attrs):
+        end_date = attrs.get("end_date")
+        start_date = attrs.get("start_date")
+        if end_date and start_date and end_date < start_date:
+            raise serializers.ValidationError({"end_date": "End date can't be before start date."})
         return attrs

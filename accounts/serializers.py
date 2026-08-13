@@ -44,19 +44,15 @@ class EmployeeCredentialSerializer(serializers.ModelSerializer):
     """Used by the Team Access list/table — never exposes the password hash."""
     class Meta:
         model = Employee
-        fields = ["id", "name", "email", "department", "role", "is_active", "created_at"]
+        fields = ["id", "employee_id", "name", "email", "department", "role", "is_active", "created_at"]
 
 
 class EmployeeWriteSerializer(serializers.ModelSerializer):
-    """
-    Used for create AND edit. password is write-only and optional on edit —
-    leaving it blank keeps the existing password unchanged.
-    """
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
         model = Employee
-        fields = ["id", "name", "email", "password", "department", "role", "is_active"]
+        fields = ["id", "employee_id", "name", "email", "password", "department", "role", "is_active"]
         extra_kwargs = {
             "name": {"required": True},
             "email": {"required": True},
@@ -67,6 +63,17 @@ class EmployeeWriteSerializer(serializers.ModelSerializer):
         value = value.strip()
         if not value:
             raise serializers.ValidationError("Name cannot be blank.")
+        return value
+
+    def validate_employee_id(self, value):
+        value = value.strip() if value else value
+        if not value:
+            raise serializers.ValidationError("Employee ID is required.")
+        qs = Employee.objects.filter(employee_id__iexact=value)
+        if self.instance:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise serializers.ValidationError("An employee with this ID already exists.")
         return value
 
     def validate_email(self, value):
@@ -81,7 +88,7 @@ class EmployeeWriteSerializer(serializers.ModelSerializer):
         if self.instance is None and not attrs.get("password"):
             raise serializers.ValidationError({"password": "Password is required when creating a new employee."})
         return attrs
-
+    
     def create(self, validated_data):
         raw_password = validated_data.pop("password")
         employee = Employee(**validated_data)

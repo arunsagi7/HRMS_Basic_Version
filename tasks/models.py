@@ -90,6 +90,26 @@ class Task(models.Model):
     last_activity = models.DateTimeField(auto_now=True)
     
     status_before_hold = models.CharField(max_length=20, blank=True) # Add this
+    
+    # ── Recurring-task linkage ──────────────────────────────────────────
+    recurring_source = models.ForeignKey(
+        "RecurringTaskDefinition", null=True, blank=True,
+        on_delete=models.SET_NULL, related_name="generated_tasks",
+    )
+    generated_for_date = models.DateField(
+        null=True, blank=True,
+        help_text="Which calendar day this occurrence belongs to. Only set for recurring-generated tasks.",
+    )
+
+    class Meta:
+        ordering = ["-assigned_date", "-id"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["recurring_source", "generated_for_date"],
+                condition=models.Q(recurring_source__isnull=False),
+                name="one_task_per_recurring_def_per_day",
+            )
+        ]
 
     class Meta:
         ordering = ["-assigned_date", "-id"]
@@ -211,3 +231,43 @@ class TaskMaster(models.Model):
 
     def __str__(self):
         return f"{self.task_name} — {self.default_hours}hr"
+    
+
+# tasks/models.py — ADD to the existing file (keep everything else as-is)
+
+class RecurringTaskDefinition(models.Model):
+    """
+    The RULE, not the task itself. Each active day in [start_date, end_date]
+    spawns its own independent Task row (see Task.recurring_source below) —
+    this table never gets a task_status, timer, or review of its own.
+    """
+    class Frequency(models.TextChoices):
+        DAILY = "daily", "Daily"   # room to add WEEKLY/WEEKDAYS_ONLY later
+
+    task_name = models.CharField(max_length=255)
+    task_details = models.TextField(blank=True)
+    assigned_to = models.ForeignKey(
+        Employee, on_delete=models.PROTECT, related_name="recurring_task_definitions"
+    )
+    priority = models.CharField(max_length=10, choices=Task.Priority.choices, default=Task.Priority.MEDIUM)
+    allotted_time = models.DecimalField(max_digits=6, decimal_places=2)
+
+    frequency = models.CharField(max_length=10, choices=Frequency.choices, default=Frequency.DAILY)
+    start_date = models.DateField()
+    end_date = models.DateField(null=True, blank=True)  # blank = runs until manually stopped
+
+    assigned_by_admin = models.ForeignKey(
+        Admin, null=True, blank=True, on_delete=models.PROTECT, related_name="recurring_created"
+    )
+    assigned_by_employee = models.ForeignKey(
+        Employee, null=True, blank=True, on_delete=models.PROTECT, related_name="recurring_created_as_tl"
+    )
+
+    is_active = models.BooleanField(default=True)  # admin can stop future generation without deleting history
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.task_name} (daily, {self.start_date} → {self.end_date or 'ongoing'})"

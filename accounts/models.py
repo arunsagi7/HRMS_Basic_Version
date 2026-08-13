@@ -33,6 +33,7 @@ class Employee(models.Model):
     name = models.CharField(max_length=150)
     email = models.EmailField(unique=True)
     password = models.CharField(max_length=255)   # stores the HASHED password, never plain text
+    employee_id = models.CharField(max_length=50, unique=True, blank=True, null=True)  # NEW — manually entered by admin
     department = models.CharField(max_length=100, blank=True)
     role = models.CharField(max_length=100, blank=True)   # e.g. "Team Lead", "Developer"
     is_active = models.BooleanField(default=True)   # NEW — lets admin disable a login without deleting history
