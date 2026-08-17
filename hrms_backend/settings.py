@@ -28,20 +28,19 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
+# Wide open — fine while you're bouncing between Render/Railway/Vercel and
+# don't yet have a fixed final domain. Tighten this once you settle on one.
 ALLOWED_HOSTS = ["*"]
 
-# Railway automatically injects RAILWAY_PUBLIC_DOMAIN once you generate a domain
-RAILWAY_PUBLIC_DOMAIN = os.environ.get('RAILWAY_PUBLIC_DOMAIN')
-
 CSRF_TRUSTED_ORIGINS = [
-    "https://hrmsbasicversion-production.up.railway.app",
+    "https://*.onrender.com",
+    "https://*.up.railway.app",
+    "https://*.vercel.app",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
 ]
 
-if RAILWAY_PUBLIC_DOMAIN:
-    CSRF_TRUSTED_ORIGINS.append(f"https://{RAILWAY_PUBLIC_DOMAIN}")
-
 CORS_ALLOW_ALL_ORIGINS = True
-
 
 # Application definition
 
@@ -130,9 +129,11 @@ DATABASES = {
         'HOST': os.environ.get('DB_HOST'),
         'PORT': os.environ.get('DB_PORT'),
         'OPTIONS': {
-            'ssl': {
-                'ca': str(BASE_DIR / 'ca.pem'),
-            },
+            'ssl': (
+                {'ca': str(BASE_DIR / 'ca.pem')}
+                if (BASE_DIR / 'ca.pem').exists()
+                else {}   # still enables SSL, just skips CA verification
+            ),
         },
     }
 }
