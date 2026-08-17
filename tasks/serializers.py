@@ -211,7 +211,7 @@ class RecurringTaskDefinitionSerializer(serializers.ModelSerializer):
         model = RecurringTaskDefinition
         fields = [
             "id", "task_name", "task_details", "assigned_to", "assigned_to_name",
-            "priority", "allotted_time", "frequency", "start_date", "end_date", "exclude_sundays",
+            "priority", "allotted_time", "frequency", "start_date", "end_date", "weekdays",
             "is_active", "created_at",
         ]
 
@@ -221,18 +221,21 @@ class RecurringTaskDefinitionSerializer(serializers.ModelSerializer):
 
 class RecurringTaskDefinitionCreateSerializer(serializers.ModelSerializer):
     """Write view — used by the Create Task modal when 'Repeats Daily' is checked."""
+    weekdays = serializers.ListField(
+        child=serializers.IntegerField(min_value=0, max_value=6),
+        required=True,
+    )
     class Meta:
         model = RecurringTaskDefinition
         fields = [
             "task_name", "task_details", "assigned_to",
-            "priority", "allotted_time", "start_date", "end_date", "exclude_sundays",
+            "priority", "allotted_time", "start_date", "end_date", "weekdays",
         ]
         extra_kwargs = {
             "assigned_to": {"required": True},
             "priority": {"required": True},
             "allotted_time": {"required": True},
             "start_date": {"required": True},
-            "exclude_sundays": {"required": False},
         }
 
     def validate_task_name(self, value):

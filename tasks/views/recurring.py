@@ -39,7 +39,7 @@ def generate_recurring_tasks(as_of_date=None):
         walk_until = min(as_of_date, d.end_date) if d.end_date else as_of_date
 
         while cursor <= walk_until:
-            if not (d.exclude_sundays and cursor.weekday() == 6):  # Python: Monday=0 … Sunday=6
+            if cursor.weekday() in d.weekdays:   # ← changed: Mon=0 ... Sun=6
                 Task.objects.get_or_create(
                     recurring_source=d,
                     generated_for_date=cursor,

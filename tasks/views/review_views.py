@@ -93,8 +93,18 @@ def approve_task(request, pk):
         task.admin_remarks = serializer.validated_data["admin_remarks"]
         task.reviewed_date = timezone.now()
         task.task_status = Task.Status.COMPLETED
+        
+        # NEW — record who approved it
+        if _is_admin(request):
+            task.reviewed_by_admin = request.user.instance
+            task.reviewed_by_employee = None
+        else:
+            task.reviewed_by_employee = request.user.instance
+            task.reviewed_by_admin = None
+            
         task.save(update_fields=[
             "quality_of_task", "rating", "admin_remarks", "reviewed_date", "task_status",
+            "reviewed_by_admin", "reviewed_by_employee",   # ← add these
         ])
 
         log_activity(

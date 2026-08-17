@@ -6,7 +6,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from decimal import Decimal
-from tasks.views.utils import _is_admin
+from tasks.views.utils import _is_admin, _can_manage_tasks   
 from ..models import TaskMaster
 from ..serializers import ( TaskMasterSerializer, TaskMasterWriteSerializer
 )
@@ -39,8 +39,8 @@ def get_all_task_master(request):
 @permission_classes([IsAuthenticated])
 def create_task_master(request):
     """POST /api/tasks/task_master/create/"""
-    if not _is_admin(request):
-        return Response({"detail": "Admin only."}, status=status.HTTP_403_FORBIDDEN)
+    if not _can_manage_tasks(request):          # ← changed from _is_admin
+        return Response({"detail": "Admins or team leads only."}, status=status.HTTP_403_FORBIDDEN)
 
     serializer = TaskMasterWriteSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
